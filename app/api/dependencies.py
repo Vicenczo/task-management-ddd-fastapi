@@ -4,7 +4,7 @@ from jose import jwt, JWTError
 from pydantic import ValidationError
 
 from app.core.config import settings
-from app.infrastructure.database.session import DbSession
+from app.infrastructure.database.session import get_db_session as DbSession
 from app.infrastructure.repositories.repository_impl import (
     SqlAlchemyUserRepository,
     SqlAlchemyProjectRepository,

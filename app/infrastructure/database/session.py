@@ -16,11 +16,8 @@ Session lifecycle in a request:
 This module intentionally has no knowledge of domain entities or ORM models —
 it only manages connection state.
 """
-from collections.abc import AsyncGenerator
-from typing import Annotated
-
-from fastapi import Depends
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
@@ -28,52 +25,27 @@ from sqlalchemy.ext.asyncio import (
 
 from app.core.config import settings
 
-# ---------------------------------------------------------------------------
-# Engine
-# ---------------------------------------------------------------------------
-
-engine = create_async_engine(
+engine: AsyncEngine = create_async_engine(
     str(settings.DB_URL),
-    # Echo SQL only in DEBUG mode — never in production
     echo=settings.DEBUG,
-    # Number of connections kept open in the pool
+    pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
-    # Seconds to wait for a connection before raising OperationalError
-    pool_timeout=30,
-    # Recycle connections after 30 minutes to avoid stale connections
-    pool_recycle=1800,
-    # Verify connection is alive before using it (prevents "SSL connection closed" errors)
-    pool_pre_ping=True,
 )
 
-# ---------------------------------------------------------------------------
-# Session factory
-# ---------------------------------------------------------------------------
-
-AsyncSessionFactory = async_sessionmaker(
+AsyncSessionFactory: async_sessionmaker[AsyncSession] = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,
-    # expire_on_commit=False: keep ORM objects usable after commit
-    # (important for returning domain entities from service layer)
     expire_on_commit=False,
-    autoflush=False,  # We flush manually before queries that need fresh data
+    autoflush=False,
     autocommit=False,
 )
 
-# ---------------------------------------------------------------------------
-# FastAPI dependency
-# ---------------------------------------------------------------------------
 
-async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_db_session() -> AsyncSession:
     """
-    FastAPI dependency that yields a request-scoped async DB session.
-
-    Usage in a route:
-        async def my_route(session: DbSession) -> ...:
-            ...
-
-    The session commits on success and rolls back on any unhandled exception.
+    Dependency that provides a transactional async database session.
+    Rolls back on exception, always closes the session.
     """
     async with AsyncSessionFactory() as session:
         try:
@@ -82,9 +54,5 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
         except Exception:
             await session.rollback()
             raise
-        finally:
-            await session.close()
 
 
-# Type alias for cleaner route signatures
-DbSession = Annotated[AsyncSession, Depends(get_db_session)]
