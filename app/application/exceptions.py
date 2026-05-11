@@ -1,48 +1,36 @@
 """
-Application-layer exceptions.
+Application-level exceptions.
 
-These exceptions are raised by service classes and caught by API route
-handlers, which map them to appropriate HTTP responses.
+These are domain/application errors that the API layer catches and converts
+to appropriate HTTP responses. They carry no HTTP knowledge themselves.
 
-Hierarchy:
-    AppError                    ← base for all application errors
-    ├── NotFoundError           ← 404
-    ├── ConflictError           ← 409  (duplicate email, slug, etc.)
-    ├── PermissionDeniedError   ← 403
-    ├── ValidationError         ← 422  (business-rule violation)
-    └── AuthenticationError     ← 401
-
-Design rule: never import FastAPI or HTTP status codes here.
-The API layer is responsible for the HTTP mapping.
+main.py registers a global handler for AppError -> HTTP 400.
+More specific subclasses allow finer-grained HTTP mapping in routes.
 """
 
 
 class AppError(Exception):
-    """Base class for all application-layer errors."""
-
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-        self.message = message
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.message!r})"
+    """
+    Base class for all application-layer errors.
+    Caught by the global exception handler in main.py -> HTTP 400.
+    """
 
 
 class NotFoundError(AppError):
-    """Raised when a requested resource does not exist."""
+    """Resource does not exist. Maps to HTTP 404."""
 
 
 class ConflictError(AppError):
-    """Raised when an operation would violate a uniqueness constraint."""
-
-
-class PermissionDeniedError(AppError):
-    """Raised when the caller lacks permission to perform an action."""
-
-
-class ValidationError(AppError):
-    """Raised when input passes schema validation but violates a business rule."""
+    """Unique constraint violation (duplicate email, slug, etc.). Maps to HTTP 409."""
 
 
 class AuthenticationError(AppError):
-    """Raised when credentials are missing or invalid."""
+    """Invalid credentials. Maps to HTTP 401."""
+
+
+class AuthorizationError(AppError):
+    """Caller lacks permission. Maps to HTTP 403."""
+
+
+class ValidationError(AppError):
+    """Business rule validation failed. Maps to HTTP 422."""

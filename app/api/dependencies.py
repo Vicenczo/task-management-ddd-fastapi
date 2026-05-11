@@ -67,9 +67,11 @@ def get_project_service(repo: ProjectRepo) -> ProjectService:
     return ProjectService(repo)
 
 
-def get_task_service(repo: TaskRepo) -> TaskService:
-    return TaskService(repo)
-
+def get_task_service(
+    task_repo: TaskRepo,
+    project_repo: ProjectRepo,
+) -> TaskService:
+    return TaskService(task_repository=task_repo, project_repository=project_repo)
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 ProjectServiceDep = Annotated[ProjectService, Depends(get_project_service)]

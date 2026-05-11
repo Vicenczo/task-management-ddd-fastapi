@@ -1,0 +1,1 @@
+"""Application layer — Services, DTOs, and Exceptions."""

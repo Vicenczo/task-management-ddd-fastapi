@@ -1,65 +1,56 @@
 """
-Authentication endpoints.
+Auth endpoints: registration and login.
 
-POST /auth/token  — OAuth2 password flow (login, returns JWT).
-GET  /auth/me     — Return the currently authenticated user's profile.
+POST /auth/register — create account + return token
+POST /auth/login    — OAuth2-compatible login (form data)
 """
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter
 from fastapi.security import OAuth2PasswordRequestForm
-from typing import Annotated
 from fastapi import Depends
 
-from app.api.dependencies import CurrentUser, UserServiceDep
-from app.application.exceptions import AuthenticationError
-from app.core.security import create_access_token
-from app.application.dtos.user_schemas import UserResponse
+from app.api.dependencies import UserServiceDep
+from app.application.dtos.user_dtos import TokenResponse, UserCreate, UserResponse
+from app.application.exceptions import AuthenticationError, ConflictError
+from fastapi import HTTPException, status
 
-router = APIRouter(prefix="/auth", tags=["Auth"])
-
-
-# ---------------------------------------------------------------------------
-# Schemas local to this module (OAuth2 token shape is standardized)
-# ---------------------------------------------------------------------------
-
-from pydantic import BaseModel
-
-
-class TokenResponse(BaseModel):
-    """Standard OAuth2 token response."""
-
-    access_token: str
-    token_type: str = "bearer"
-    expires_in: int  # seconds
-
-
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
+router = APIRouter()
 
 
 @router.post(
-    "/token",
+    "/register",
+    response_model=dict,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a new user account",
+)
+async def register(dto: UserCreate, service: UserServiceDep) -> dict:
+    """Register a new user and return an access token."""
+    try:
+        user_response, token_response = await service.register(dto)
+    except ConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    return {
+        "user": user_response.model_dump(),
+        "token": token_response.model_dump(),
+    }
+
+
+@router.post(
+    "/login",
     response_model=TokenResponse,
-    summary="Login — obtain a JWT access token",
-    description=(
-        "Submit credentials using the OAuth2 **password** flow. "
-        "The returned `access_token` must be sent as a `Bearer` token "
-        "in the `Authorization` header on subsequent requests."
-    ),
+    summary="Login and receive a JWT access token",
 )
 async def login(
-    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-    user_service: UserServiceDep,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    service: UserServiceDep = ...,
 ) -> TokenResponse:
     """
-    Authenticate with email (username field) + password.
-
-    FastAPI's OAuth2PasswordRequestForm uses `username` as the field name
-    by spec — we treat it as the email address.
+    OAuth2-compatible login endpoint.
+    Swagger UI uses this for the 'Authorize' button.
+    Note: OAuth2PasswordRequestForm uses 'username' field — we treat it as email.
     """
     try:
-        user = await user_service.verify_credentials(
-            email=form_data.username,
+        _, token_response = await service.login(
+            email=form_data.username,  # OAuth2 form calls it username
             password=form_data.password,
         )
     except AuthenticationError as exc:
@@ -68,21 +59,4 @@ async def login(
             detail=str(exc),
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    from app.core.config import settings
-    token = create_access_token(user.id)
-    return TokenResponse(
-        access_token=token,
-        token_type="bearer",
-        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-    )
-
-
-@router.get(
-    "/me",
-    response_model=UserResponse,
-    summary="Get current authenticated user",
-)
-async def get_me(current_user: CurrentUser) -> UserResponse:
-    """Return the profile of the currently authenticated user."""
-    return UserResponse.model_validate(current_user, from_attributes=True)
+    return token_response

@@ -1,48 +1,53 @@
 """
-Application DTOs — public API for the schema layer.
+Application Data Transfer Objects (DTOs).
 
-Import from here, not from individual schema modules:
-    from app.application.dtos import UserCreate, UserResponse, TaskCreate
+DTOs are the public contract of the Application layer.
+They validate incoming data (Request DTOs) and shape outgoing data (Response DTOs).
+
+Rules:
+  - DTOs know nothing about SQLAlchemy or ORM models.
+  - DTOs may reference domain value objects (StrEnum) for type safety.
+  - Never return domain entities directly from routes — always map to a DTO.
 """
-from app.application.dtos.project_schemas import (
+from app.application.dtos.project_dtos import (
     ProjectCreate,
+    ProjectMemberAdd,
     ProjectResponse,
     ProjectStatusUpdate,
-    ProjectSummary,
     ProjectUpdate,
 )
-from app.application.dtos.task_schemas import (
+from app.application.dtos.task_dtos import (
     TaskAssign,
     TaskCreate,
     TaskResponse,
     TaskStatusUpdate,
-    TaskSummary,
     TaskUpdate,
 )
-from app.application.dtos.user_schemas import (
+from app.application.dtos.user_dtos import (
+    TokenResponse,
     UserCreate,
-    UserUpdate,
+    UserLogin,
     UserResponse,
-    UserSummary,
+    UserUpdate,
 )
 
 __all__ = [
     # User
     "UserCreate",
+    "UserLogin",
     "UserUpdate",
     "UserResponse",
-    "UserSummary",
+    "TokenResponse",
     # Project
     "ProjectCreate",
     "ProjectUpdate",
     "ProjectStatusUpdate",
+    "ProjectMemberAdd",
     "ProjectResponse",
-    "ProjectSummary",
     # Task
     "TaskCreate",
     "TaskUpdate",
     "TaskStatusUpdate",
     "TaskAssign",
     "TaskResponse",
-    "TaskSummary",
 ]
