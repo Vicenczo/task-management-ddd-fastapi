@@ -1,31 +1,22 @@
 """
-Domain Models — Javni API domenskog sloja.
+Infrastructure Repository Implementations.
 
-Importovati entitete odavde, a ne direktno iz podmodula:
-    from app.domain.models import User, Project, Task, TaskStatus
+Concrete SQLAlchemy adapters for the domain repository ports defined in
+app.domain.repository_interfaces.
+
+Import from here for clean wiring in dependency injection:
+    from app.infrastructure.repositories import (
+        SqlAlchemyUserRepository,
+        SqlAlchemyProjectRepository,
+        SqlAlchemyTaskRepository,
+    )
 """
-from app.domain.models.base import Entity, _utcnow
-from app.domain.models.project import Project
-from app.domain.models.task import Task
-from app.domain.models.user import User
-from app.domain.models.value_objects import (
-    ProjectStatus,
-    TaskPriority,
-    TaskStatus,
-    UserRole,
-)
+from app.infrastructure.repositories.project_repository import SqlAlchemyProjectRepository
+from app.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
+from app.infrastructure.repositories.user_repository import SqlAlchemyUserRepository
 
 __all__ = [
-    # Base
-    "Entity",
-    "_utcnow",
-    # Entities
-    "User",
-    "Project",
-    "Task",
-    # Value Objects
-    "UserRole",
-    "ProjectStatus",
-    "TaskStatus",
-    "TaskPriority",
+    "SqlAlchemyUserRepository",
+    "SqlAlchemyProjectRepository",
+    "SqlAlchemyTaskRepository",
 ]
