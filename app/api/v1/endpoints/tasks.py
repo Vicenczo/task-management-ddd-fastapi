@@ -1,20 +1,18 @@
 """
 Task endpoints — nested under /projects/{project_id}/tasks/.
 
-POST   /projects/{project_id}/tasks/                         — create task      [MEMBER]
-GET    /projects/{project_id}/tasks/                         — list tasks       [MEMBER]
-GET    /projects/{project_id}/tasks/{task_id}                — get task         [MEMBER]
-PATCH  /projects/{project_id}/tasks/{task_id}                — update task      [MEMBER]
-PATCH  /projects/{project_id}/tasks/{task_id}/status         — change status    [MEMBER]
-PATCH  /projects/{project_id}/tasks/{task_id}/assign         — assign/unassign  [MEMBER]
+POST   /{project_id}/tasks/                      — create task
+GET    /{project_id}/tasks/                      — list tasks
+GET    /{project_id}/tasks/{task_id}             — get task
+PATCH  /{project_id}/tasks/{task_id}             — update task
+PATCH  /{project_id}/tasks/{task_id}/status      — transition status
+PATCH  /{project_id}/tasks/{task_id}/assign      — assign/unassign
 
-Design note:
-  Query param for status filter is named 'task_status' (not 'status') to avoid
-  shadowing Python's built-in status and potential FastAPI conflicts.
+Error handling delegated to global AppError handler.
 """
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Query, status
 
 from app.api.dependencies import CurrentUser, TaskServiceDep
 from app.application.dtos.task_dtos import (
@@ -24,7 +22,6 @@ from app.application.dtos.task_dtos import (
     TaskStatusUpdate,
     TaskUpdate,
 )
-from app.application.exceptions import AuthorizationError, NotFoundError, ValidationError
 from app.domain.models.value_objects import TaskPriority, TaskStatus
 
 router = APIRouter()
@@ -34,7 +31,7 @@ router = APIRouter()
     "/{project_id}/tasks/",
     response_model=TaskResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a new task in a project",
+    summary="Create a new task",
 )
 async def create_task(
     project_id: UUID,
@@ -43,23 +40,12 @@ async def create_task(
     service: TaskServiceDep,
 ) -> TaskResponse:
     """
-    Create a new task in the specified project.
+    Project must be ACTIVE. Caller must be a member.
 
-    Requirements:
-    - Caller must be a project member or owner.
-    - Project must be in ACTIVE status.
-    - due_date must be in the future if provided.
+    Raises (handled globally):
+        NotFoundError → 404, AuthorizationError → 403, ValidationError → 422
     """
-    try:
-        return await service.create_task(project_id, dto, reporter_id=current_user.id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
-    except ValidationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
-        )
+    return await service.create_task(project_id, dto, reporter_id=current_user.id)
 
 
 @router.get(
@@ -77,15 +63,7 @@ async def list_tasks(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[TaskResponse]:
-    """
-    List tasks in a project with optional filters.
-
-    Query params:
-    - status: Filter by task status (backlog, todo, in_progress, in_review, done, cancelled)
-    - priority: Filter by priority (critical, high, medium, low)
-    - assignee_id: Filter by assigned user UUID
-    - limit / offset: Pagination
-    """
+    """Filter by status, priority, or assignee. Paginated."""
     return await service.list_project_tasks(
         project_id,
         status=task_status,
@@ -107,11 +85,11 @@ async def get_task(
     current_user: CurrentUser,
     service: TaskServiceDep,
 ) -> TaskResponse:
-    """Fetch a single task by its UUID."""
-    try:
-        return await service.get_task(task_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    """
+    Raises (handled globally):
+        NotFoundError → 404
+    """
+    return await service.get_task(task_id)
 
 
 @router.patch(
@@ -127,19 +105,10 @@ async def update_task(
     service: TaskServiceDep,
 ) -> TaskResponse:
     """
-    Update task title, description, priority, due date, or tags.
-    Only project members can update tasks.
+    Raises (handled globally):
+        NotFoundError → 404, AuthorizationError → 403, ValidationError → 422
     """
-    try:
-        return await service.update_task(task_id, dto, caller_id=current_user.id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
-    except ValidationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
-        )
+    return await service.update_task(task_id, dto, caller_id=current_user.id)
 
 
 @router.patch(
@@ -155,26 +124,12 @@ async def transition_task_status(
     service: TaskServiceDep,
 ) -> TaskResponse:
     """
-    Move a task to a new status following Kanban flow rules.
+    Kanban flow: BACKLOG→TODO→IN_PROGRESS→IN_REVIEW→DONE.
 
-    Valid transitions:
-    - BACKLOG     → TODO, CANCELLED
-    - TODO        → IN_PROGRESS, BACKLOG, CANCELLED
-    - IN_PROGRESS → IN_REVIEW, TODO, CANCELLED
-    - IN_REVIEW   → DONE, IN_PROGRESS, CANCELLED
-    - DONE        → (terminal)
-    - CANCELLED   → BACKLOG (reopen)
+    Raises (handled globally):
+        NotFoundError → 404, AuthorizationError → 403, ValidationError → 422
     """
-    try:
-        return await service.transition_status(task_id, dto, caller_id=current_user.id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
-    except ValidationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
-        )
+    return await service.transition_status(task_id, dto, caller_id=current_user.id)
 
 
 @router.patch(
@@ -190,19 +145,9 @@ async def assign_task(
     service: TaskServiceDep,
 ) -> TaskResponse:
     """
-    Assign a task to a user or unassign it.
+    { "user_id": "<uuid>" } to assign, { "user_id": null } to unassign.
 
-    Send { "user_id": "<uuid>" } to assign.
-    Send { "user_id": null } to unassign.
-    Only project members can assign tasks.
+    Raises (handled globally):
+        NotFoundError → 404, AuthorizationError → 403, ValidationError → 422
     """
-    try:
-        return await service.assign_task(task_id, dto, caller_id=current_user.id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
-    except ValidationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
-        )
+    return await service.assign_task(task_id, dto, caller_id=current_user.id)

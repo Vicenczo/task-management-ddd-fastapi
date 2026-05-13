@@ -50,7 +50,7 @@ services:
         condition: service_healthy
     volumes:
       - ./app:/app/app
-    # Placeholder - aktiviraćemo kada Dockerfile bude spreman
+
     profiles:
       - full
 

@@ -1,21 +1,17 @@
 """
-Auth endpoints: registration and login.
+Auth endpoints.
 
 POST /auth/register — create account + return token
 POST /auth/login    — OAuth2-compatible login (form data)
 
-Design notes:
-  - /register returns both user data and token so the client
-    can immediately authenticate without a second login call.
-  - /login uses OAuth2PasswordRequestForm for Swagger UI compatibility.
-    The 'username' field in the form is treated as email address.
+Error handling is delegated to the global AppError handler in main.py.
+These functions raise domain exceptions; the handler converts them to HTTP.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.dependencies import UserServiceDep
 from app.application.dtos.user_dtos import TokenResponse, UserCreate
-from app.application.exceptions import AuthenticationError, ConflictError
 
 router = APIRouter()
 
@@ -28,15 +24,12 @@ router = APIRouter()
 )
 async def register(dto: UserCreate, service: UserServiceDep) -> dict:
     """
-    Register a new user.
+    Register a new user and return an access token.
 
-    Returns the user profile and an access token so the client
-    can immediately start making authenticated requests.
+    Raises (handled globally):
+        ConflictError → 409 if email or username already exists.
     """
-    try:
-        user_response, token_response = await service.register(dto)
-    except ConflictError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    user_response, token_response = await service.register(dto)
     return {
         "user": user_response.model_dump(),
         "token": token_response.model_dump(),
@@ -54,20 +47,15 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
 ) -> TokenResponse:
     """
-    OAuth2-compatible login endpoint used by Swagger UI 'Authorize' button.
+    OAuth2-compatible login.
 
-    IMPORTANT: The OAuth2 form field is named 'username' but accepts an email address.
-    Enter your email in the 'username' field when using Swagger UI.
+    IMPORTANT: Enter your email address in the 'username' field in Swagger UI.
+
+    Raises (handled globally):
+        AuthenticationError → 401 if credentials are invalid.
     """
-    try:
-        _, token_response = await service.login(
-            email=form_data.username,  # OAuth2 form field name is always 'username'
-            password=form_data.password,
-        )
-    except AuthenticationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    _, token_response = await service.login(
+        email=form_data.username,
+        password=form_data.password,
+    )
     return token_response

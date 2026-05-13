@@ -1,20 +1,21 @@
 """
 Project endpoints.
 
-POST   /projects/                             — create project           [AUTH]
-GET    /projects/                             — list my projects         [AUTH]
-GET    /projects/public                       — list public projects     [PUBLIC]
-GET    /projects/{project_id}                 — get project by ID       [AUTH]
-PATCH  /projects/{project_id}                 — update project          [OWNER]
-PATCH  /projects/{project_id}/status          — transition status       [OWNER]
-POST   /projects/{project_id}/members         — add member              [OWNER]
-DELETE /projects/{project_id}/members/{uid}   — remove member           [OWNER]
+POST   /projects/                           — create project
+GET    /projects/                           — list my projects
+GET    /projects/public                     — list public projects
+GET    /projects/{project_id}               — get project by ID
+PATCH  /projects/{project_id}               — update project
+PATCH  /projects/{project_id}/status        — transition status
+POST   /projects/{project_id}/members       — add member
+DELETE /projects/{project_id}/members/{id}  — remove member
 
-CRITICAL: /public route MUST be defined before /{project_id}.
+Route ordering: /public MUST precede /{project_id}.
+Error handling delegated to global AppError handler.
 """
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, status
 
 from app.api.dependencies import CurrentUser, ProjectServiceDep
 from app.application.dtos.project_dtos import (
@@ -24,18 +25,11 @@ from app.application.dtos.project_dtos import (
     ProjectStatusUpdate,
     ProjectUpdate,
 )
-from app.application.exceptions import (
-    AuthorizationError,
-    ConflictError,
-    NotFoundError,
-    ValidationError,
-)
 
 router = APIRouter()
 
 
-# ── Collection routes ───────────────────────────────────────────────────────
-# MUST come before /{project_id}
+# ── Collection routes (before /{project_id}) ───────────────────────────────
 
 @router.post(
     "/",
@@ -49,22 +43,15 @@ async def create_project(
     service: ProjectServiceDep,
 ) -> ProjectResponse:
     """
-    Create a new project owned by the authenticated user.
+    Create a project in PLANNING status. Activate it before adding tasks.
 
-    The project starts in PLANNING status — activate it before adding tasks.
-    Slug is auto-generated from the project name if not provided.
+    Raises (handled globally):
+        ConflictError → 409 if slug already exists.
     """
-    try:
-        return await service.create_project(dto, owner_id=current_user.id)
-    except ConflictError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    return await service.create_project(dto, owner_id=current_user.id)
 
 
-@router.get(
-    "/",
-    response_model=list[ProjectResponse],
-    summary="List my projects",
-)
+@router.get("/", response_model=list[ProjectResponse], summary="List my projects")
 async def list_my_projects(
     current_user: CurrentUser,
     service: ProjectServiceDep,
@@ -85,16 +72,11 @@ async def list_public_projects(
     limit: int = 100,
     offset: int = 0,
 ) -> list[ProjectResponse]:
-    """
-    Return all public projects. No authentication required.
-
-    NOTE: This route MUST be defined before /{project_id} —
-    otherwise FastAPI would attempt to parse 'public' as a UUID.
-    """
+    """All public projects — no auth required."""
     return await service.list_public_projects(limit=limit, offset=offset)
 
 
-# ── Single resource routes ──────────────────────────────────────────────────
+# ── Single resource routes (after static routes) ───────────────────────────
 
 @router.get(
     "/{project_id}",
@@ -106,11 +88,11 @@ async def get_project(
     service: ProjectServiceDep,
     current_user: CurrentUser,
 ) -> ProjectResponse:
-    """Fetch a project by its UUID."""
-    try:
-        return await service.get_project(project_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    """
+    Raises (handled globally):
+        NotFoundError → 404
+    """
+    return await service.get_project(project_id)
 
 
 @router.patch(
@@ -125,15 +107,10 @@ async def update_project(
     service: ProjectServiceDep,
 ) -> ProjectResponse:
     """
-    Update project name, description, or visibility.
-    Only the project owner can update project details.
+    Raises (handled globally):
+        NotFoundError → 404, AuthorizationError → 403
     """
-    try:
-        return await service.update_project(project_id, dto, caller_id=current_user.id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    return await service.update_project(project_id, dto, caller_id=current_user.id)
 
 
 @router.patch(
@@ -148,27 +125,12 @@ async def transition_project_status(
     service: ProjectServiceDep,
 ) -> ProjectResponse:
     """
-    Transition the project to a new status.
+    Valid transitions: PLANNING→ACTIVE, ACTIVE→ON_HOLD/COMPLETED/ARCHIVED, etc.
 
-    Valid transitions:
-    - PLANNING  → ACTIVE, ARCHIVED
-    - ACTIVE    → ON_HOLD, COMPLETED, ARCHIVED
-    - ON_HOLD   → ACTIVE, ARCHIVED
-    - COMPLETED → ARCHIVED
-    - ARCHIVED  → (terminal, no transitions)
-
-    Project must be ACTIVE to accept new tasks.
+    Raises (handled globally):
+        NotFoundError → 404, AuthorizationError → 403, ValidationError → 422
     """
-    try:
-        return await service.transition_status(project_id, dto, caller_id=current_user.id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
-    except ValidationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
-        )
+    return await service.transition_status(project_id, dto, caller_id=current_user.id)
 
 
 @router.post(
@@ -183,22 +145,10 @@ async def add_member(
     service: ProjectServiceDep,
 ) -> ProjectResponse:
     """
-    Add a user to the project by their UUID.
-
-    Use GET /users/ to find user IDs.
-    Only the project owner can add members.
-    The owner is automatically a member and cannot be added separately.
+    Raises (handled globally):
+        NotFoundError → 404, AuthorizationError → 403, ValidationError → 422
     """
-    try:
-        return await service.add_member(project_id, dto, caller_id=current_user.id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
-    except ValidationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
-        )
+    return await service.add_member(project_id, dto, caller_id=current_user.id)
 
 
 @router.delete(
@@ -213,17 +163,7 @@ async def remove_member(
     service: ProjectServiceDep,
 ) -> ProjectResponse:
     """
-    Remove a user from the project member list.
-    The owner cannot be removed — transfer ownership first.
-    Only the project owner can remove members.
+    Raises (handled globally):
+        NotFoundError → 404, AuthorizationError → 403, ValidationError → 422
     """
-    try:
-        return await service.remove_member(project_id, user_id, caller_id=current_user.id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
-    except ValidationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
-        )
+    return await service.remove_member(project_id, user_id, caller_id=current_user.id)
