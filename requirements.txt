@@ -29,3 +29,11 @@ httpx==0.27.2
 pytest==8.3.3
 pytest-asyncio==0.24.0
 anyio[trio]==4.4.0    # async test runner
+
+#uvicorn
+gunicorn==22.0.0
+
+email-validator
+
+bcrypt==4.0.1
+passlib[bcrypt]==1.7.4

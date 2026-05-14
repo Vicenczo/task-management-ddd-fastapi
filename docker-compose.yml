@@ -1,20 +1,20 @@
-version: "3.9"
-
 services:
   db:
     image: postgres:15-alpine
     container_name: taskapi_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-taskapi}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskapi_secret}
+      # Koristi varijable iz .env, a ako ih nema, stavlja default vrednosti
+      POSTGRES_USER: ${POSTGRES_USER:-taskuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskpass}
       POSTGRES_DB: ${POSTGRES_DB:-taskapi_db}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-taskapi}"]
+      # Proverava da li je baza spremna pre nego što se app pokrene
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-taskuser} -d ${POSTGRES_DB:-taskapi_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -49,10 +49,8 @@ services:
       redis:
         condition: service_healthy
     volumes:
+      # Mapira tvoj lokalni app folder u kontejner za live-reload
       - ./app:/app/app
-
-    profiles:
-      - full
 
 volumes:
   postgres_data:

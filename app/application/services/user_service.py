@@ -28,16 +28,40 @@ from app.domain.repository_interfaces import AbstractUserRepository
 
 logger = logging.getLogger(__name__)
 
-# bcrypt context — shared instance, thread-safe
+# ---------------------------------------------------------------------------
+# Bcrypt Context Setup
+# ---------------------------------------------------------------------------
+# Napomena: bcrypt ima limit od 72 karaktera za lozinku.
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def _hash_password(plain: str) -> str:
+    """
+    Hashes a plain text password using bcrypt.
+
+    CRITICAL: Bcrypt has a 72-byte limit. We truncate or validate
+    to prevent ValueError from crashing the worker.
+    """
+    if not plain:
+        raise ValueError("Password cannot be empty.")
+
+    # Ako je lozinka predugačka, bcrypt će pući.
+    # Ovde bacamo jasnu grešku pre nego što passlib pokuša heširanje.
+    if len(plain) > 72:
+        raise AuthenticationError("Password is too long. Maximum allowed length is 72 characters.")
+
     return _pwd_context.hash(plain)
 
 
 def _verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_context.verify(plain, hashed)
+    """Verifies a plain text password against its hash."""
+    if not plain or not hashed:
+        return False
+    try:
+        return _pwd_context.verify(plain, hashed)
+    except Exception as e:
+        logger.error("Password verification failed: %s", str(e))
+        return False
 
 
 def _create_access_token(user_id: UUID) -> tuple[str, int]:
@@ -61,9 +85,6 @@ def _create_access_token(user_id: UUID) -> tuple[str, int]:
 class UserService:
     """
     Orchestrates user registration, authentication, and profile management.
-
-    Receives an AbstractUserRepository — never a concrete SQLAlchemy class.
-    This allows the service to be tested with an in-memory fake repository.
     """
 
     def __init__(self, repository: AbstractUserRepository) -> None:
@@ -72,27 +93,20 @@ class UserService:
     async def register(self, dto: UserCreate) -> tuple[UserResponse, TokenResponse]:
         """
         Register a new user.
-
-        Steps:
-          1. Check email uniqueness.
-          2. Check username uniqueness.
-          3. Hash password.
-          4. Persist via repository.
-          5. Issue JWT token.
-
-        Raises:
-            ConflictError: If email or username already exists.
         """
         if await self._repo.get_by_email(dto.email):
             raise ConflictError(f"Email '{dto.email}' is already registered.")
         if await self._repo.get_by_username(dto.username):
             raise ConflictError(f"Username '{dto.username}' is already taken.")
 
+        # Heširanje sa ugrađenom provere dužine
+        hashed = _hash_password(dto.password)
+
         user = User(
             email=dto.email,
             username=dto.username,
             full_name=dto.full_name,
-            hashed_password=_hash_password(dto.password),
+            hashed_password=hashed,
             role=UserRole.MEMBER,
             is_active=True,
             is_verified=False,
@@ -109,14 +123,13 @@ class UserService:
     async def login(self, email: str, password: str) -> tuple[UserResponse, TokenResponse]:
         """
         Authenticate a user by email + password.
-
-        Raises:
-            AuthenticationError: If credentials are invalid or user is inactive.
         """
         user = await self._repo.get_by_email(email)
+
+        # Provera postojanja i lozinke
         if user is None or not _verify_password(password, user.hashed_password):
-            # Uniform error — don't reveal whether email exists
             raise AuthenticationError("Invalid email or password.")
+
         if not user.is_active:
             raise AuthenticationError("Account is deactivated. Contact an administrator.")
 
@@ -128,12 +141,7 @@ class UserService:
         )
 
     async def get_by_id(self, user_id: UUID) -> UserResponse:
-        """
-        Fetch a user by ID.
-
-        Raises:
-            NotFoundError: If user does not exist.
-        """
+        """Fetch a user by ID."""
         user = await self._repo.get_by_id(user_id)
         if user is None:
             raise NotFoundError(f"User with id={user_id} not found.")
@@ -142,15 +150,7 @@ class UserService:
     async def update_profile(
         self, user_id: UUID, dto: UserUpdate
     ) -> UserResponse:
-        """
-        Update user profile fields.
-
-        Only fields explicitly set in dto are changed.
-        Password is re-hashed if provided.
-
-        Raises:
-            NotFoundError: If user does not exist.
-        """
+        """Update user profile fields."""
         user = await self._repo.get_by_id(user_id)
         if user is None:
             raise NotFoundError(f"User with id={user_id} not found.")
