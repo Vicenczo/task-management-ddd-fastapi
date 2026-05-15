@@ -1,10 +1,9 @@
 services:
   db:
-    image: postgres:15-alpine
+    image: ankane/pgvector:v0.5.1
     container_name: taskapi_postgres
     restart: unless-stopped
     environment:
-      # Koristi varijable iz .env, a ako ih nema, stavlja default vrednosti
       POSTGRES_USER: ${POSTGRES_USER:-taskuser}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskpass}
       POSTGRES_DB: ${POSTGRES_DB:-taskapi_db}
@@ -13,7 +12,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      # Proverava da li je baza spremna pre nego što se app pokrene
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-taskuser} -d ${POSTGRES_DB:-taskapi_db}"]
       interval: 10s
       timeout: 5s
@@ -49,7 +47,6 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      # Mapira tvoj lokalni app folder u kontejner za live-reload
       - ./app:/app/app
 
 volumes:
