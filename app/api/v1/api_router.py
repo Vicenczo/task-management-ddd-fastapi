@@ -14,6 +14,9 @@ api_router = APIRouter()
 api_router.include_router(auth_router, prefix="/auth", tags=["Auth"])
 api_router.include_router(users_router, prefix="/users", tags=["Users"])
 api_router.include_router(projects_router, prefix="/projects", tags=["Projects"])
-# Tasks su nested pod /projects/{project_id}/tasks —
-# router interno definiše /{project_id}/tasks/ pa ne dodajemo /projects ponovo
+# Tasks are nested under /projects/{project_id}/tasks —
+# The router internally defines /{project_id}/tasks/, so we don't repeat the /projects prefix
 api_router.include_router(tasks_router, prefix="/projects", tags=["Tasks"])
+
+# Address: /api/v1/tasks/search-semantic
+api_router.include_router(tasks_router, prefix="/tasks", tags=["AI Search"])

@@ -71,8 +71,13 @@ def get_task_service(
     task_repo: TaskRepo,
     project_repo: ProjectRepo,
 ) -> TaskService:
-    return TaskService(task_repository=task_repo, project_repository=project_repo)
-
+    """Wire TaskService with optional AI service."""
+    from app.infrastructure.ai.ai_service import ai_service
+    return TaskService(
+        task_repository=task_repo,
+        project_repository=project_repo,
+        ai_service=ai_service,
+    )
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 ProjectServiceDep = Annotated[ProjectService, Depends(get_project_service)]
 TaskServiceDep = Annotated[TaskService, Depends(get_task_service)]

@@ -33,7 +33,12 @@ anyio[trio]==4.4.0    # async test runner
 #uvicorn
 gunicorn==22.0.0
 
-email-validator
+# Validation and security
+email-validator          # Pydantic support for email format validation
+bcrypt==4.0.1           # Modern password hashing library
+passlib[bcrypt]==1.7.4  # Password hashing abstraction for FastAPI security
 
-bcrypt==4.0.1
-passlib[bcrypt]==1.7.4
+# AI and Vector Search
+langchain-ollama>=0.2.0  # Integration for local LLM (llama3) via Ollama
+langchain-core>=0.3.0    # Core LangChain abstractions and schemas
+pgvector>=0.3.0          # PostgreSQL vector similarity search support

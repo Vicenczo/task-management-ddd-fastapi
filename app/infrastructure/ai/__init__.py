@@ -1,0 +1,1 @@
+"""AI infrastructure package — embeddings and LLM integration."""

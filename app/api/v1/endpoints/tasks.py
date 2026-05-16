@@ -151,3 +151,43 @@ async def assign_task(
         NotFoundError → 404, AuthorizationError → 403, ValidationError → 422
     """
     return await service.assign_task(task_id, dto, caller_id=current_user.id)
+
+# ── Semantic search ─────────────────────────────────────────────────────────
+
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.api.dependencies import DbSession
+
+
+@router.get(
+    "/search-semantic",
+    response_model=list[TaskResponse],
+    summary="Semantic task search using vector similarity",
+    tags=["Tasks"],
+)
+async def semantic_search(
+        query: str,
+        current_user: CurrentUser,
+        service: TaskServiceDep,
+        session: DbSession,
+        limit: int = Query(default=10, ge=1, le=50),
+) -> list[TaskResponse]:
+    """
+    Find tasks semantically similar to the query using cosine similarity.
+
+    The query is converted to a 4096-dim vector via llama3 (Ollama).
+    Results are sorted by semantic similarity — closest match first.
+
+    Requirements:
+    - Ollama must be running locally on port 11434.
+    - llama3 model must be pulled: `ollama pull llama3`
+    - Tasks must have embeddings (generated on creation).
+
+    Raises (handled globally):
+        ValidationError → 422 if Ollama is unavailable.
+    """
+    return await service.semantic_search(
+        query=query,
+        limit=limit,
+        caller_session=session,
+    )
