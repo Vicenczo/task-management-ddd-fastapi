@@ -1,20 +1,5 @@
 # ============================================================
-# GitHub Actions CI Pipeline
-# ============================================================
-# Triggers: push or PR to main/develop
-#
-# Jobs:
-#   test:
-#     1. Start PostgreSQL service container
-#     2. Create taskapi_test_db database
-#     3. Install Python dependencies
-#     4. Run Alembic migrations on test DB
-#     5. Execute pytest (13 integration tests)
-#
-# Environment matches local test setup exactly:
-#   - Same PostgreSQL version (15)
-#   - Same credentials as conftest.py defaults
-#   - NullPool + function-scope fixtures (Windows-stable pattern)
+# GitHub Actions CI Pipeline - FIXED for PGVector
 # ============================================================
 
 name: CI
@@ -26,7 +11,6 @@ on:
     branches: [main, develop]
 
 env:
-  # These match the defaults in test/conftest.py TEST_DB_URL
   POSTGRES_USER: taskapi
   POSTGRES_PASSWORD: taskapi_secret
   POSTGRES_DB: taskapi_db
@@ -39,7 +23,8 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15-alpine
+        # Zamenjeno sa imidžom koji podržava vektore za Llama 3
+        image: ankane/pgvector:v0.5.1-pg15
         env:
           POSTGRES_USER: taskapi
           POSTGRES_PASSWORD: taskapi_secret
@@ -47,41 +32,37 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U taskapi"
+          --health-cmd "pg_isready -U taskapi -d taskapi_db"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
     steps:
-      # ── Checkout ───────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── Python setup ───────────────────────────────────────
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
 
-      # ── Dependencies ───────────────────────────────────────
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ── Create test database ────────────────────────────────
-      # conftest.py expects taskapi_test_db — separate from main DB
       - name: Create test database
         env:
           PGPASSWORD: taskapi_secret
         run: |
-          psql -h localhost -U taskapi -d taskapi_db \
-            -c "CREATE DATABASE taskapi_test_db;"
+          # Prvo kreiramo ekstenziju u glavnoj bazi pre migracija
+          psql -h localhost -U taskapi -d taskapi_db -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          # Kreiramo test bazu za pytest
+          psql -h localhost -U taskapi -d taskapi_db -c "CREATE DATABASE taskapi_test_db;"
+          # Dodajemo ekstenziju i u test bazu
+          psql -h localhost -U taskapi -d taskapi_test_db -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
-      # ── Environment file ────────────────────────────────────
-      # Tests read settings from .env via pydantic-settings.
-      # We provide minimal values so the app can start.
       - name: Create .env for CI
         run: |
           cat > .env << 'EOF'
@@ -96,23 +77,18 @@ jobs:
           ALLOWED_ORIGINS=["http://localhost:3000","http://localhost:8000"]
           EOF
 
-      # ── Alembic migrations on main DB ───────────────────────
-      # (conftest.py creates its own schema via Base.metadata.create_all)
-      # We still run migrations to verify they're not broken.
       - name: Run Alembic migrations
         env:
           DB_URL: postgresql+asyncpg://taskapi:taskapi_secret@localhost:5432/taskapi_db
         run: |
           alembic upgrade head
 
-      # ── Tests ──────────────────────────────────────────────
       - name: Run pytest
         env:
           TEST_DB_URL: postgresql+asyncpg://taskapi:taskapi_secret@localhost:5432/taskapi_test_db
         run: |
           python -m pytest test/ -v --tb=short --no-header
 
-      # ── Test summary ────────────────────────────────────────
       - name: Upload test results on failure
         if: failure()
         uses: actions/upload-artifact@v4
