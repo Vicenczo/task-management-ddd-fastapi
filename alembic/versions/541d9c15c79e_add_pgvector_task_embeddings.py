@@ -20,7 +20,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Step 1: Enable pgvector extension
-    # IF NOT EXISTS prevents error if extension already enabled
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
     # Step 2: Create task_embeddings table
@@ -33,11 +32,10 @@ def upgrade() -> None:
             sa.ForeignKey("tasks.id", ondelete="CASCADE"),
             nullable=False,
         ),
-        # VECTOR(4096) — llama3 embedding dimension
-        # pgvector registers this type after CREATE EXTENSION
+        # Placeholder type; actual vector type set via raw SQL below
         sa.Column(
             "embedding",
-            sa.Text(),  # Placeholder; actual type set via raw SQL below
+            sa.Text(),
             nullable=True,
         ),
         sa.Column("model_name", sa.String(length=100), nullable=False, server_default="llama3"),
@@ -49,19 +47,15 @@ def upgrade() -> None:
     )
 
     # Step 3: Change embedding column type to VECTOR(4096)
-    # Cannot use sa.Column(Vector(4096)) directly in create_table because
-    # pgvector type is only recognized AFTER the extension is created.
-    # Using raw ALTER TABLE ensures correct type.
+    # Using raw ALTER TABLE ensures correct type for llama3 embeddings
     op.execute("ALTER TABLE task_embeddings ALTER COLUMN embedding TYPE vector(4096) USING NULL::vector(4096)")
 
-    # Step 4: Create IVFFlat index for fast cosine similarity search
-    # lists=100 is suitable for tables up to ~1M rows
-    # Increase lists as data grows (rule: sqrt(row_count))
+    # Step 4: Create HNSW index for fast cosine similarity search
+    # FIXED: Switched from ivfflat to hnsw to support >2000 dimensions (Llama 3 uses 4096)
     op.execute(
         "CREATE INDEX ix_task_embeddings_embedding_cosine "
         "ON task_embeddings "
-        "USING ivfflat (embedding vector_cosine_ops) "
-        "WITH (lists = 100)"
+        "USING hnsw (embedding vector_cosine_ops)"
     )
 
     # Step 5: Standard B-tree index on task_id for lookups
@@ -77,4 +71,3 @@ def downgrade() -> None:
     op.drop_index("ix_task_embeddings_task_id", table_name="task_embeddings")
     op.drop_index("ix_task_embeddings_embedding_cosine", table_name="task_embeddings")
     op.drop_table("task_embeddings")
-    # Note: we do NOT drop the vector extension — other tables may use it
