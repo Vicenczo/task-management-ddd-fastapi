@@ -47,18 +47,16 @@ def upgrade() -> None:
     )
 
     # Step 3: Change embedding column type to VECTOR(4096)
-    # Using raw ALTER TABLE ensures correct type for llama3 embeddings
+    # Using 4096 dimensions to fully support Llama 3 embeddings.
+    # We use raw SQL to handle the vector type registration.
     op.execute("ALTER TABLE task_embeddings ALTER COLUMN embedding TYPE vector(4096) USING NULL::vector(4096)")
 
-    # Step 4: Create HNSW index for fast cosine similarity search
-    # FIXED: Switched from ivfflat to hnsw to support >2000 dimensions (Llama 3 uses 4096)
-    op.execute(
-        "CREATE INDEX ix_task_embeddings_embedding_cosine "
-        "ON task_embeddings "
-        "USING hnsw (embedding vector_cosine_ops)"
-    )
+    # Step 4: Indexing
+    # Note: Vector indexing (HNSW/IVFFlat) is omitted for now to avoid
+    # PostgreSQL dimension limits (2000) during CI/CD.
+    # Exact nearest neighbor search will be used, which is sufficient for current scale.
 
-    # Step 5: Standard B-tree index on task_id for lookups
+    # Step 5: Standard B-tree index on task_id for fast lookups
     op.create_index(
         "ix_task_embeddings_task_id",
         "task_embeddings",
@@ -68,6 +66,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Remove indexes and table
     op.drop_index("ix_task_embeddings_task_id", table_name="task_embeddings")
-    op.drop_index("ix_task_embeddings_embedding_cosine", table_name="task_embeddings")
     op.drop_table("task_embeddings")
