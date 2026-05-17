@@ -24,7 +24,7 @@ jobs:
     services:
       postgres:
         # Zamenjeno sa imidžom koji podržava vektore za Llama 3
-        image: ankane/pgvector:v0.5.1-pg15
+        image: pgvector/pgvector:pg15
         env:
           POSTGRES_USER: taskapi
           POSTGRES_PASSWORD: taskapi_secret
